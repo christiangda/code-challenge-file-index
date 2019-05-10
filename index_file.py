@@ -13,11 +13,21 @@ care about." "Another string we don't care about with escaped\" \" quotes. "
 10 2016-06-10 17:53:22 "Also invalid" Str2 Str3
 10 2016-06-10-17:53:22 "Also invalid" Str2
 
-[ ]+         --> white spaces 1 or +
-([1-9]+)     --> only numbers > 0
-([^\"][\S]+) --> Matches any character which is not a whitespace character. Exclude "
+Regex groups
+([ ]+)                    --> white spaces 1 or +
+(?P<index>[1-9]+)         --> only numbers > 0
+(?P<datetime>[0-9\-\:])   -->
+(?P<quote>(?<![\\])[\"])  --> match " , not match \"
+([^\"]\S+)                --> Any non white space character except "
 
-^([0-9]+)[ ]+([^\"][\S]+)[ ]+([^\"][\S]+)[ ]+([^\"][\S]+)[ ]+([^\"][\S]+)$
+((?<![\\])['"])((?:.(?!(?<![\\])\1))*.?)\1 --> "sfasfadsa dsfasdf asf\" a"
+
+(?P<quote>(?<![\\])["])((?:.(?!(?<![\\])(?P=quote)))*.?)(?P=quote)
+
+((?P<quote>(?<![\\])["])((?:.(?!(?<![\\])(?P=quote)))*.?)(?P=quote)|([^\"]\S+)) --> "sdfdsfsdf" | sfasasdasd
+
+# string
+^([1-9]+)( +)([0-9\-\:]+)(( +)((?P<q>(?<![\\])[\"])((?:.(?!(?<![\\])(?P=q)))*.?)(?P=q)|([^\"]\S+))){3}$
 """
 
 
