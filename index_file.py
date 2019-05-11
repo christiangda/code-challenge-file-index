@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 from datetime import datetime
+import re
 
 """
 7 2016-06-10-17:53:22 "A quoted string we don't care about" "The string we do
@@ -13,21 +14,61 @@ care about." "Another string we don't care about with escaped\" \" quotes. "
 10 2016-06-10 17:53:22 "Also invalid" Str2 Str3
 10 2016-06-10-17:53:22 "Also invalid" Str2
 
-Regex groups
-([ ]+)                    --> white spaces 1 or +
-(?P<index>[1-9]+)         --> only numbers > 0
-(?P<datetime>[0-9\-\:])   -->
-(?P<quote>(?<![\\])[\"])  --> match " , not match \"
-([^\"]\S+)                --> Any non white space character except "
+Regex groups:
+# \" together
+([^\"](?<=\\)\") --> https://regex101.com/r/eYZzNh/11
 
-((?<![\\])['"])((?:.(?!(?<![\\])\1))*.?)\1 --> "sfasfadsa dsfasdf asf\" a"
+#Everuthings inside " "
+([^\"](?<=\\)\")(.+)(\1)     --> https://regex101.com/r/eYZzNh/12
 
-(?P<quote>(?<![\\])["])((?:.(?!(?<![\\])(?P=quote)))*.?)(?P=quote)
+#Everuthings inside " " except (\"\r\n\t\f\v)
+^(\")([^\"\r\n\t\f\v]+)(\1)$ --> https://regex101.com/r/eYZzNh/13
 
-((?P<quote>(?<![\\])["])((?:.(?!(?<![\\])(?P=quote)))*.?)(?P=quote)|([^\"]\S+)) --> "sdfdsfsdf" | sfasasdasd
+# Content inside quotes except "
+^(?P<quoted>\")([^\"\r\n\t\f\v]+)(?P=quoted)$ --> https://regex101.com/r/eYZzNh/14
 
-# string
-^([1-9]+)( +)([0-9\-\:]+)(( +)((?P<q>(?<![\\])[\"])((?:.(?!(?<![\\])(?P=q)))*.?)(?P=q)|([^\"]\S+))){3}$
+([^\"](?<=\\)\")(.+)(\1)
+
+# only numbers > 0
+([1-9][0-9]*) --> https://regex101.com/r/eYZzNh/4
+
+# white spaces and at least 1
+( +)          --> https://regex101.com/r/eYZzNh/5
+
+# only characters 0..9 and - and : and at least 1
+([0-9\-\:]+)  --> https://regex101.com/r/eYZzNh/6
+
+# words without white character + white space
+^([^\\\"\r\n\t\f\v]+)$  --> https://regex101.com/r/eYZzNh/7
+
+# Any non (white space and "), bassically words
+([^\" ]+)                          --> https://regex101.com/r/eYZzNh/3
+
+# Any work inside "", including those (using lookahead and lookbehind)
+^(?=\")([^\s].*)(?<=\")$           --> https://regex101.com/r/eYZzNh/1
+
+# the previous two together ((only words without ")|(quoted words))
+(([^\" ]+)|(?=\")([^\s].*)(?<=\")) --> https://regex101.com/r/eYZzNh/2
+
+# Repetition of (( +)((only words without ")|(quoted words))){3}
+(( +)(([^\" ]+)|(?=\")([^\s].*)(?<=\"))){3} -->
+
+# The pattern solution
+^([1-9][0-9]*)( +)([0-9\-\:]+)(( +)(([^\" ]+)|(?P<q>(?<![\\])[\"])((?:.(?!(?<![\\])(?P=q)))*.?)(?P=q))){3}$
+
+
+# Get groups with words
+^([1-9][0-9]*)( +)([0-9\-\:]+)( +)([^\"\s]+)( +)([^\"\s]+)( +)([^\"\s]+)$
+
+# Get groups with quotes ans spaces
+^([1-9][0-9]*)( +)([0-9\-\:]+)( +)((?P<q1>\")([^\"\r\n\t\f\v]+)(?P=q1))( +)((?P<q2>\")([^\"\r\n\t\f\v]+)(?P=q2))( +)((?P<q3>\")([^\"\r\n\t\f\v]+)(?P=q3))$
+
+(?P<q1>\")([^\"\r\n\t\f\v]+)(?P=q1)
+
+
+# Best solution until now
+https://regex101.com/r/eYZzNh/16
+^([1-9][0-9]*)( +)([0-9\-\:]+)( +)((?P<q1>\")([^\"\r\n\t\f\v]+)(?P=q1)|([^\\\"\s]+))( +)((?P<q2>\")([^\"\r\n\t\f\v]+)(?P=q2)|([^\\\"\s]+))( +)((?P<q3>\")([^\"\r\n\t\f\v]+)(?P=q3)|([^\\\"\s]+))$
 """
 
 
@@ -50,42 +91,77 @@ def index(file, database):
         for line in f.readlines():
             is_valid, fields = validate(line)
             if is_valid:
-                if fields[0] in database:
-                    database[fields[0]].append(fields[3])
+                if fields[1] in database:
+                    database[fields[1]].append(fields[10])
                 else:
-                    database[fields[0]] = list()
-                    database[fields[0]].append(fields[3])
+                    database[fields[1]] = list()
+                    database[fields[1]].append(fields[10])
             else:
                 errors += 1
     return errors
 
 
 def validate(line):
-    fields = line.split()
-    print(fields)
+    fields = split_line(line)
+    # print(fields)
     valid_key = True
     valid_datetime = True
+    valid_size = False
 
-    try:
-        if int(fields[0]) < 1:
-            raise ValueError('key is negative value')
-    except ValueError:
-        valid_key = False
+    if len(fields) > 1:
+        valid_size = True
+        try:
+            if int(fields[1]) < 1:
+                raise ValueError('key is negative value')
+        except ValueError:
+            valid_key = False
 
-    try:
-        datetime.strptime(fields[1], "%Y-%m-%d-%H:%M:%S")
-    except ValueError:
-        valid_datetime = False
+        try:
+            datetime.strptime(fields[3], "%Y-%m-%d-%H:%M:%S")
+        except ValueError:
+            valid_datetime = False
 
-    # print('{},{},{}'.format(valid_key, valid_datetime, fields[2]))
+    #print('{},{},{},{}'.format(valid_key, valid_datetime, valid_size, fields))
+    return (valid_key and valid_datetime and valid_size), fields
 
-    return (valid_key and valid_datetime), fields
+
+def split_line(line):
+    pattern = r"""^([1-9][0-9]*)( +)([0-9\-\:]+)( +)((?P<q1>\")([^\"\r\n\t\f\v]+)(?P=q1)|([^\\\"\s]+))( +)((?P<q2>\")([^\"\r\n\t\f\v]+)(?P=q2)|([^\\\"\s]+))( +)((?P<q3>\")([^\"\r\n\t\f\v]+)(?P=q3)|([^\\\"\s]+))$"""
+
+    pattern_string = r"""
+        ^                                       #--> start
+        ([1-9][0-9]*)                           #--> only positive numbers
+        ( +)                                    #--> one o more white spaces
+        ([0-9\-\:]+)
+        ( +)                                    #--> one o more white spaces
+        (                                       #--> start group of single word or quoted word
+            (?P<q1>\")([^\"\r\n\t\f\v]+)(?P=q1) #--> quoted word
+            |                                   #--> or condition
+            ([^\\\"\s]+)                        #--> single word
+        )                                       #--> start group of single word or quoted word
+        ( +)                                    #--> one o more white spaces
+        (
+            (?P<q2>\")([^\"\r\n\t\f\v]+)(?P=q2) #--> quoted word
+            |                                   #--> or condition
+            ([^\\\"\s]+)                        #--> single word
+        )                                       #--> start group of single word or quoted word
+        ( +)                                    #--> one o more white spaces
+        (
+            (?P<q3>\")([^\"\r\n\t\f\v]+)(?P=q3) #--> quoted word
+            |                                   #--> or condition
+            ([^\\\"\s]+))                       #--> single word
+        $                                       #--> end
+    """
+
+    field_list = re.split(pattern, line)
+    #print('sieze: {},  data: {}'.format(len(field_list), field_list))
+    return field_list
 
 
 if __name__ == "__main__":
     """
-    mem structure is a dict where key is a int and value is a list:
-    { key :[String1, String2, String2]}
+    my memory structure is a dict where key is a int and value is a list:
+    { ID :[String1, String2, String2]}
     {
        1: ['String1', 'String2', 'String2'],
       14: ['String1', 'String2', 'String3']
@@ -97,7 +173,6 @@ if __name__ == "__main__":
     in_file.close()
     print('================')
     print('Invalid lines: {}'.format(errors))
-    print(mem_structure)
 
     index_text = input("Enter a list of indexes separate by commas (,)?")
     index_list = index_text.split(',')
@@ -106,4 +181,4 @@ if __name__ == "__main__":
             for value in mem_structure[index]:
                 print('{} {}'.format(index, value))
         else:
-            print('{} --> does not exit'.format(index))
+            print('{} --> key does not exit'.format(index))
